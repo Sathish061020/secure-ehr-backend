@@ -40,6 +40,10 @@ public class AuditLog {
     @Column(nullable = false)
     private boolean success;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean flagged = false;
+
     @Column(length = 45)
     private String ipAddress;
 

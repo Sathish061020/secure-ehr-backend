@@ -13,4 +13,7 @@ public class AuthResponse {
     private String firstName;
     private String lastName;
     private Long   userId;
+    private boolean isTempPassword;
+    private String healthId;
 }
+

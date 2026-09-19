@@ -8,6 +8,7 @@ import com.ehr.entity.User;
 import com.ehr.exception.EhrException;
 import com.ehr.repository.UserRepository;
 import com.ehr.service.AuditService;
+import com.ehr.service.AuthService;
 import com.ehr.service.PatientRecordService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -31,6 +32,7 @@ public class PatientRecordController {
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
+    private final AuthService authService;
 
     /** STAFF: Register a new patient and create their shell record. */
     @PostMapping
@@ -56,6 +58,12 @@ public class PatientRecordController {
                 .build();
         patient = userRepository.save(patient);
 
+        // Generate Health ID for staff-registered patients (same format as self-registered)
+        if (patient.getHealthId() == null) {
+            patient.setHealthId(authService.generateUniqueHealthId());
+            patient = userRepository.save(patient);
+        }
+
         // Create shell record (no medical data)
         patientRecordService.createShellRecord(patient, request.getAssignedDoctorId(), request.getReasonForVisit());
 
@@ -67,7 +75,8 @@ public class PatientRecordController {
         return ResponseEntity.ok(Map.of(
                 "message", "Patient registered successfully",
                 "patientId", patient.getId(),
-                "email", patient.getEmail()
+                "email", patient.getEmail(),
+                "healthId", patient.getHealthId()
         ));
     }
 

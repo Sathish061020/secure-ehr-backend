@@ -15,6 +15,8 @@ import lombok.Data;
 @Builder
 public class LoginResponse {
     private boolean trusted;
+    private boolean isTempPassword;
     private String  message;
     private AuthResponse authData;
 }
+

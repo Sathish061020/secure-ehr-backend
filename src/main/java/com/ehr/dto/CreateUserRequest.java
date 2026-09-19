@@ -9,7 +9,6 @@ public class CreateUserRequest {
     @NotBlank @Email
     private String email;
 
-    @NotBlank
     private String password;
 
     @NotBlank
@@ -18,9 +17,11 @@ public class CreateUserRequest {
     @NotBlank
     private String lastName;
 
-    @NotBlank
     private String phone;
 
     @NotBlank
-    private String role; // DOCTOR | PATIENT | ADMIN | STAFF
+    private String role; // DOCTOR | STAFF
+
+    private String department;
 }
+

@@ -37,6 +37,13 @@ public class AuditController {
         return ResponseEntity.ok(Map.of("deniedCount", auditService.getDeniedCount()));
     }
 
+    /** ADMIN: Flagged security alerts. */
+    @GetMapping("/alerts")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<AuditLog>> getSecurityAlerts() {
+        return ResponseEntity.ok(auditService.getFlaggedLogs());
+    }
+
     /** Any authenticated user: view their own recent audit actions. */
     @GetMapping("/my")
     public ResponseEntity<List<AuditLog>> getMyAuditLogs(
@@ -44,3 +51,4 @@ public class AuditController {
         return ResponseEntity.ok(auditService.getLogsByActor(userDetails.getUsername()));
     }
 }
+

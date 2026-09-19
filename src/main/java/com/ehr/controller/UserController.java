@@ -1,6 +1,7 @@
 package com.ehr.controller;
 
 import com.ehr.dto.CreateUserRequest;
+import com.ehr.dto.UpdateUserRequest;
 import com.ehr.dto.UserDto;
 import com.ehr.service.UserService;
 import jakarta.validation.Valid;
@@ -47,11 +48,20 @@ public class UserController {
         return ResponseEntity.ok(userService.getUserById(id));
     }
 
-    /** ADMIN: Create a user (any role). */
+    /** ADMIN: Create a user (DOCTOR or STAFF). */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<UserDto> createUser(@Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.ok(userService.createUser(request));
+    }
+
+    /** ADMIN: Update user details (name, department, role). */
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserDto> updateUser(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateUserRequest request) {
+        return ResponseEntity.ok(userService.updateUser(id, request));
     }
 
     /** ADMIN: Delete a user. */
@@ -68,4 +78,12 @@ public class UserController {
     public ResponseEntity<UserDto> toggleLock(@PathVariable Long id) {
         return ResponseEntity.ok(userService.toggleUserLock(id));
     }
+
+    /** ADMIN: Toggle user active/deactivate status. */
+    @PostMapping("/{id}/toggle-active")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<UserDto> toggleActive(@PathVariable Long id) {
+        return ResponseEntity.ok(userService.toggleUserActive(id));
+    }
 }
+

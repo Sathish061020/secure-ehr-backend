@@ -15,5 +15,13 @@ public class UserDto {
     private String role;
     private boolean enabled;
     private boolean accountLocked;
+    private boolean active;
+    private boolean isTempPassword;
+    private String healthId;
+    private String department;
+    private Integer age;
+    private String sex;
+    private String address;
     private LocalDateTime createdAt;
 }
+

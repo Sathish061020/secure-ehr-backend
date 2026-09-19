@@ -2,14 +2,18 @@ package com.ehr.service;
 
 import com.ehr.dto.PatientRecordDto;
 import com.ehr.dto.UpdateRecordRequest;
+import com.ehr.entity.Appointment;
+import com.ehr.entity.AppointmentStatus;
 import com.ehr.entity.PatientRecord;
 import com.ehr.entity.Role;
 import com.ehr.entity.User;
 import com.ehr.exception.EhrException;
+import com.ehr.repository.AppointmentRepository;
 import com.ehr.repository.ConsentRepository;
 import com.ehr.repository.PatientRecordRepository;
 import com.ehr.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,11 +22,13 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PatientRecordService {
 
     private final PatientRecordRepository recordRepository;
     private final UserRepository userRepository;
     private final ConsentRepository consentRepository;
+    private final AppointmentRepository appointmentRepository;
     private final EncryptionService encryptionService;
 
     @Transactional
@@ -49,22 +55,43 @@ public class PatientRecordService {
     }
 
     /**
-     * DOCTOR — get decrypted record. Enforces consent check.
+     * DOCTOR — get record with tiered access enforcement.
+     *
+     * Access tiers (evaluated in order):
+     * 1. FULL: assigned doctor OR active consent grant → all fields decrypted
+     * 2. READ_ONLY: CONFIRMED appointment with patient (no consent/assignment) → basic info only
+     * 3. NONE: no relationship → 403 thrown
      */
     @Transactional(readOnly = true)
     public PatientRecordDto getRecordForDoctor(Long patientId, Long doctorId) {
 
         User patient = getUser(patientId, "Patient");
-        User doctor = getUser(doctorId, "Doctor");
-
-        if (!consentRepository.existsByPatientAndDoctorAndGrantedTrue(patient, doctor)) {
-            throw new EhrException("Access denied: patient consent not granted", 403);
-        }
+        User doctor  = getUser(doctorId,  "Doctor");
 
         PatientRecord record = recordRepository.findByPatient(patient)
                 .orElseThrow(() -> new EhrException("Patient record not found", 404));
 
-        return toDecryptedDto(record);
+        boolean isAssignedDoctor = record.getAssignedDoctor() != null
+                && record.getAssignedDoctor().getId().equals(doctorId);
+        boolean hasConsent = consentRepository.existsByPatientAndDoctorAndGrantedTrue(patient, doctor);
+
+        // Tier 1: FULL access
+        if (isAssignedDoctor || hasConsent) {
+            return toDecryptedDto(record, "FULL");
+        }
+
+        // Tier 2: READ_ONLY — confirmed appointment exists (any date)
+        boolean hasConfirmedAppointment = appointmentRepository
+                .existsByDoctorAndPatientAndStatus(doctor, patient, AppointmentStatus.CONFIRMED);
+
+        if (hasConfirmedAppointment) {
+            log.info("READ_ONLY access: doctor {} viewing patient {} via confirmed appointment", doctorId, patientId);
+            return toReadOnlyDto(record);
+        }
+
+        // Tier 3: No access
+        log.warn("ACCESS_DENIED: doctor {} attempted to access patient {} without consent or appointment", doctorId, patientId);
+        throw new EhrException("Access denied: patient consent not granted", 403);
     }
 
     /**
@@ -78,11 +105,11 @@ public class PatientRecordService {
         PatientRecord record = recordRepository.findByPatient(patient)
                 .orElseThrow(() -> new EhrException("Your record was not found", 404));
 
-        return toDecryptedDto(record);
+        return toDecryptedDto(record, null);
     }
 
     /**
-     * DOCTOR — update encrypted medical fields. Enforces consent.
+     * DOCTOR — update encrypted medical fields. Enforces FULL access (consent or assigned).
      */
     @Transactional
     public PatientRecordDto updateRecord(
@@ -91,42 +118,36 @@ public class PatientRecordService {
             UpdateRecordRequest request) {
 
         User patient = getUser(patientId, "Patient");
-        User doctor = getUser(doctorId, "Doctor");
-
-        if (!consentRepository.existsByPatientAndDoctorAndGrantedTrue(patient, doctor)) {
-            throw new EhrException("Access denied: patient consent not granted", 403);
-        }
+        User doctor  = getUser(doctorId,  "Doctor");
 
         PatientRecord record = recordRepository.findByPatient(patient)
                 .orElseThrow(() -> new EhrException("Patient record not found", 404));
 
+        boolean isAssignedDoctor = record.getAssignedDoctor() != null
+                && record.getAssignedDoctor().getId().equals(doctorId);
+        boolean hasConsent = consentRepository.existsByPatientAndDoctorAndGrantedTrue(patient, doctor);
+
+        if (!isAssignedDoctor && !hasConsent) {
+            throw new EhrException("Access denied: FULL access (consent or assignment) required to update records", 403);
+        }
+
         if (request.getDiagnosis() != null) {
-            record.setDiagnosis(
-                    encryptionService.encrypt(request.getDiagnosis())
-            );
+            record.setDiagnosis(encryptionService.encrypt(request.getDiagnosis()));
         }
-
         if (request.getPrescription() != null) {
-            record.setPrescription(
-                    encryptionService.encrypt(request.getPrescription())
-            );
+            record.setPrescription(encryptionService.encrypt(request.getPrescription()));
         }
-
         if (request.getMedicalHistory() != null) {
-            record.setMedicalHistory(
-                    encryptionService.encrypt(request.getMedicalHistory())
-            );
+            record.setMedicalHistory(encryptionService.encrypt(request.getMedicalHistory()));
         }
-
         if (request.getBloodPressure() != null) {
             record.setBloodPressure(request.getBloodPressure());
         }
-
         if (request.getBloodSugar() != null) {
             record.setBloodSugar(request.getBloodSugar());
         }
 
-        return toDecryptedDto(recordRepository.save(record));
+        return toDecryptedDto(recordRepository.save(record), "FULL");
     }
 
     /**
@@ -134,7 +155,6 @@ public class PatientRecordService {
      */
     @Transactional(readOnly = true)
     public List<PatientRecordDto> getDoctorPatients(Long doctorId) {
-
         return recordRepository.findByAssignedDoctorId(doctorId)
                 .stream()
                 .map(this::toShellDto)
@@ -146,7 +166,6 @@ public class PatientRecordService {
      */
     @Transactional(readOnly = true)
     public List<PatientRecordDto> getAllShells() {
-
         return recordRepository.findAll()
                 .stream()
                 .map(this::toShellDto)
@@ -156,18 +175,15 @@ public class PatientRecordService {
     // ── Private helpers ───────────────────────────────────────
 
     private User getUser(Long id, String label) {
-
         return userRepository.findById(id)
-                .orElseThrow(() ->
-                        new EhrException(label + " not found", 404));
+                .orElseThrow(() -> new EhrException(label + " not found", 404));
     }
 
     /**
-     * Decrypted DTO — only for DOCTOR with consent
-     * or PATIENT viewing own record.
+     * Decrypted DTO — FULL access tier.
+     * {@code accessLevel} is "FULL" for doctors, null for own-record (patient).
      */
-    private PatientRecordDto toDecryptedDto(PatientRecord r) {
-
+    private PatientRecordDto toDecryptedDto(PatientRecord r, String accessLevel) {
         return PatientRecordDto.builder()
                 .id(r.getId())
                 .patientId(r.getPatient().getId())
@@ -175,40 +191,51 @@ public class PatientRecordService {
                 .patientLastName(r.getPatient().getLastName())
                 .patientEmail(r.getPatient().getEmail())
                 .patientPhone(r.getPatient().getPhone())
-
-                .assignedDoctorId(
-                        r.getAssignedDoctor() != null
-                                ? r.getAssignedDoctor().getId()
-                                : null
-                )
-
-                .assignedDoctorName(
-                        r.getAssignedDoctor() != null
-                                ? r.getAssignedDoctor().getFirstName()
-                                + " "
-                                + r.getAssignedDoctor().getLastName()
-                                : null
-                )
-
-                .diagnosis(
-                        encryptionService.decrypt(r.getDiagnosis())
-                )
-
-                .prescription(
-                        encryptionService.decrypt(r.getPrescription())
-                )
-
-                .medicalHistory(
-                        encryptionService.decrypt(r.getMedicalHistory())
-                )
-
+                .healthId(r.getPatient().getHealthId())
+                .age(r.getPatient().getAge())
+                .sex(r.getPatient().getSex())
+                .address(r.getPatient().getAddress())
+                .assignedDoctorId(r.getAssignedDoctor() != null ? r.getAssignedDoctor().getId() : null)
+                .assignedDoctorName(r.getAssignedDoctor() != null
+                        ? r.getAssignedDoctor().getFirstName() + " " + r.getAssignedDoctor().getLastName()
+                        : null)
+                .diagnosis(encryptionService.decrypt(r.getDiagnosis()))
+                .prescription(encryptionService.decrypt(r.getPrescription()))
+                .medicalHistory(encryptionService.decrypt(r.getMedicalHistory()))
                 .bloodPressure(r.getBloodPressure())
                 .bloodSugar(r.getBloodSugar())
+                .reasonForVisit(r.getReasonForVisit())
+                .accessLevel(accessLevel)
+                .createdAt(r.getCreatedAt())
+                .updatedAt(r.getUpdatedAt())
+                .build();
+    }
 
-                .reasonForVisit(
-                        r.getReasonForVisit()
-                )
-
+    /**
+     * READ_ONLY DTO — appointment-only access tier.
+     * Sensitive fields (diagnosis, prescription, medicalHistory) are null — never returned.
+     */
+    private PatientRecordDto toReadOnlyDto(PatientRecord r) {
+        return PatientRecordDto.builder()
+                .id(r.getId())
+                .patientId(r.getPatient().getId())
+                .patientFirstName(r.getPatient().getFirstName())
+                .patientLastName(r.getPatient().getLastName())
+                .patientEmail(r.getPatient().getEmail())
+                .patientPhone(r.getPatient().getPhone())
+                .healthId(r.getPatient().getHealthId())
+                .age(r.getPatient().getAge())
+                .sex(r.getPatient().getSex())
+                .address(r.getPatient().getAddress())
+                .assignedDoctorId(r.getAssignedDoctor() != null ? r.getAssignedDoctor().getId() : null)
+                .assignedDoctorName(r.getAssignedDoctor() != null
+                        ? r.getAssignedDoctor().getFirstName() + " " + r.getAssignedDoctor().getLastName()
+                        : null)
+                // diagnosis / prescription / medicalHistory intentionally omitted (null)
+                .bloodPressure(r.getBloodPressure())
+                .bloodSugar(r.getBloodSugar())
+                .reasonForVisit(r.getReasonForVisit())
+                .accessLevel("READ_ONLY")
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .build();
@@ -219,7 +246,6 @@ public class PatientRecordService {
      * Safe for STAFF / doctor patient lists.
      */
     private PatientRecordDto toShellDto(PatientRecord r) {
-
         return PatientRecordDto.builder()
                 .id(r.getId())
                 .patientId(r.getPatient().getId())
@@ -227,30 +253,21 @@ public class PatientRecordService {
                 .patientLastName(r.getPatient().getLastName())
                 .patientEmail(r.getPatient().getEmail())
                 .patientPhone(r.getPatient().getPhone())
-
-                .assignedDoctorId(
-                        r.getAssignedDoctor() != null
-                                ? r.getAssignedDoctor().getId()
-                                : null
-                )
-
-                .assignedDoctorName(
-                        r.getAssignedDoctor() != null
-                                ? r.getAssignedDoctor().getFirstName()
-                                + " "
-                                + r.getAssignedDoctor().getLastName()
-                                : null
-                )
-
+                .healthId(r.getPatient().getHealthId())
+                .age(r.getPatient().getAge())
+                .sex(r.getPatient().getSex())
+                .address(r.getPatient().getAddress())
+                .assignedDoctorId(r.getAssignedDoctor() != null ? r.getAssignedDoctor().getId() : null)
+                .assignedDoctorName(r.getAssignedDoctor() != null
+                        ? r.getAssignedDoctor().getFirstName() + " " + r.getAssignedDoctor().getLastName()
+                        : null)
                 .bloodPressure(r.getBloodPressure())
                 .bloodSugar(r.getBloodSugar())
-
-                .reasonForVisit(
-                        r.getReasonForVisit()
-                )
-
+                .reasonForVisit(r.getReasonForVisit())
                 .createdAt(r.getCreatedAt())
                 .updatedAt(r.getUpdatedAt())
                 .build();
+
     }
 }
+

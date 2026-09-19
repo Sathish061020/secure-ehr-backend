@@ -37,6 +37,8 @@ public class AuditService {
                     .map(AuditLog::getCurrentHash)
                     .orElse("GENESIS");
 
+            boolean isFlagged = !success || action.contains("LOCKED") || action.contains("BLOCKED") || action.contains("DENIED");
+
             // Build deterministic data string for hashing
             String dataToHash = String.join("|",
                     safe(actorEmail),
@@ -56,6 +58,7 @@ public class AuditService {
                     .targetEmail(targetEmail)
                     .details(details)
                     .success(success)
+                    .flagged(isFlagged)
                     .ipAddress(ipAddress)
                     .previousHash(previousHash)
                     .currentHash(currentHash)
@@ -76,6 +79,11 @@ public class AuditService {
     @Transactional(readOnly = true)
     public List<AuditLog> getLogsByActor(String email) {
         return auditLogRepository.findByActorEmailOrderByTimestampDesc(email);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AuditLog> getFlaggedLogs() {
+        return auditLogRepository.findByFlaggedTrueOrderByTimestampDesc();
     }
 
     @Transactional(readOnly = true)

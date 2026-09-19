@@ -18,6 +18,11 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     /** Per-actor audit trail — available to any authenticated user for their own logs. */
     List<AuditLog> findByActorEmailOrderByTimestampDesc(String email);
 
+    /** Flagged security alerts. */
+    List<AuditLog> findByFlaggedTrueOrderByTimestampDesc();
+    Page<AuditLog> findByFlaggedTrueOrderByTimestampDesc(Pageable pageable);
+
     /** Count of failed actions for Admin dashboard stat card. */
     long countBySuccessFalse();
 }
+

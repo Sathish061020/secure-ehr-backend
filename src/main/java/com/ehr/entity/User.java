@@ -51,6 +51,30 @@ public class User {
     @Builder.Default
     private int failedLoginAttempts = 0;
 
+    /** Unique health identifier for PATIENT accounts. Format: EHR-YYYY-NNNNN */
+    @Column(unique = true, length = 20)
+    private String healthId;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean isTempPassword = false;
+
+    @Column(length = 100)
+    private String department;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean active = true;
+
+    @Column
+    private Integer age;
+
+    @Column(length = 20)
+    private String sex;
+
+    @Column(length = 255)
+    private String address;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

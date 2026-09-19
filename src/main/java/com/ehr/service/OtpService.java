@@ -98,4 +98,27 @@ public class OtpService {
         );
         mailSender.send(message);
     }
+
+    public void sendTempPasswordEmail(String toEmail, String tempPassword) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject("Secure EHR — Welcome! Account Credentials");
+            message.setText(
+                    "Hello,\n\n" +
+                    "An account has been created for you on the Secure EHR portal.\n\n" +
+                    "Your login credentials:\n" +
+                    "Email: " + toEmail + "\n" +
+                    "Temporary Password: " + tempPassword + "\n\n" +
+                    "Upon signing in for the first time, you will be prompted to set a new password.\n\n" +
+                    "— Secure EHR System"
+            );
+            mailSender.send(message);
+            log.info("Temporary password email sent to: {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send temporary password email to {}: {}", toEmail, e.getMessage());
+        }
+    }
 }
+

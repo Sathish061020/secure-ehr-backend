@@ -5,6 +5,8 @@ import com.ehr.dto.LoginRequest;
 import com.ehr.dto.LoginResponse;
 import com.ehr.dto.OtpVerifyRequest;
 import com.ehr.dto.RegisterRequest;
+import com.ehr.dto.SetPasswordRequest;
+
 import com.ehr.entity.Role;
 import com.ehr.entity.User;
 import com.ehr.exception.EhrException;
@@ -18,7 +20,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.time.Year;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,11 +39,17 @@ public class AuthService {
     private final PasswordEncoder       passwordEncoder;
     private final TrustedDeviceService  trustedDeviceService;
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     @Value("${app.rate-limit.max-login-attempts}")
     private int maxAttempts;
 
     @Value("${app.rate-limit.lock-duration-minutes}")
     private int lockDurationMinutes;
+
+    @Value("${app.admin.allowed-emails:admin@secureehr.com}")
+    private String allowedAdminEmailsStr;
+
 
     // ── Step 1 ────────────────────────────────────────────────────────────
 
@@ -60,6 +73,26 @@ public class AuthService {
             auditService.log("ANONYMOUS", "UNKNOWN", "LOGIN_ATTEMPT",
                     request.getEmail(), "Unknown email", false, ipAddress);
             throw new EhrException("Invalid credentials", 401);
+        }
+
+        // ── Active check ──────────────────────────────────────────────────
+        if (!user.isActive()) {
+            auditService.log(user.getEmail(), user.getRole().name(), "LOGIN_BLOCKED",
+                    null, "Account deactivated", false, ipAddress);
+            throw new EhrException("Account is deactivated", 403);
+        }
+
+        // ── Admin whitelist check ─────────────────────────────────────────
+        if (user.getRole() == Role.ADMIN) {
+            List<String> allowed = Arrays.stream(allowedAdminEmailsStr.split(","))
+                    .map(String::trim)
+                    .map(String::toLowerCase)
+                    .collect(Collectors.toList());
+            if (!allowed.contains(user.getEmail().trim().toLowerCase())) {
+                auditService.log(user.getEmail(), "ADMIN", "LOGIN_REJECTED",
+                        null, "Admin email not in allowed-emails whitelist", false, ipAddress);
+                throw new EhrException("Admin login rejected: email not authorized", 403);
+            }
         }
 
         // ── Account lock check ────────────────────────────────────────────
@@ -103,6 +136,34 @@ public class AuthService {
         user.setFailedLoginAttempts(0);
         userRepository.save(user);
 
+        // ── Temp Password Check (Skip OTP) ────────────────────────────────
+        if (user.isTempPassword()) {
+            auditService.log(user.getEmail(), user.getRole().name(), "LOGIN_TEMP_PASSWORD",
+                    null, "Login with temporary password — password reset required", true, ipAddress);
+
+            String accessToken  = jwtService.generateAccessToken(user.getEmail(), user.getRole());
+            String refreshToken = jwtService.generateRefreshToken(user.getEmail());
+
+            AuthResponse authData = AuthResponse.builder()
+                    .accessToken(accessToken)
+                    .refreshToken(refreshToken)
+                    .role(user.getRole().name())
+                    .email(user.getEmail())
+                    .firstName(user.getFirstName())
+                    .lastName(user.getLastName())
+                    .userId(user.getId())
+                    .isTempPassword(true)
+                    .healthId(user.getHealthId())
+                    .build();
+
+            return LoginResponse.builder()
+                    .trusted(true)
+                    .isTempPassword(true)
+                    .message("Temporary password verified. Please set a new password.")
+                    .authData(authData)
+                    .build();
+        }
+
         // ── Trusted device check ──────────────────────────────────────────
         if (trustedDeviceService.isTrustedDevice(user, httpRequest)) {
             String accessToken  = jwtService.generateAccessToken(user.getEmail(), user.getRole());
@@ -119,13 +180,17 @@ public class AuthService {
                     .firstName(user.getFirstName())
                     .lastName(user.getLastName())
                     .userId(user.getId())
+                    .isTempPassword(false)
+                    .healthId(user.getHealthId())
                     .build();
 
             return LoginResponse.builder()
                     .trusted(true)
+                    .isTempPassword(false)
                     .authData(authData)
                     .build();
         }
+
 
         // ── Normal OTP flow ───────────────────────────────────────────────
         otpService.generateAndSendOtp(user.getEmail());
@@ -265,6 +330,10 @@ public class AuthService {
             throw new EhrException("Invalid role: " + request.getRole(), 400);
         }
 
+        if (role != Role.PATIENT) {
+            throw new EhrException("Public registration only permits PATIENT role", 400);
+        }
+
         String full = request.getFullName().trim();
         int spaceIdx = full.indexOf(' ');
         String firstName = spaceIdx > 0 ? full.substring(0, spaceIdx) : full;
@@ -278,13 +347,70 @@ public class AuthService {
                 .phone("")
                 .role(role)
                 .enabled(true)
+                .active(true)
+                .isTempPassword(false)
+                .healthId(generateUniqueHealthId())
                 .build();
 
         userRepository.save(user);
 
         auditService.log(request.getEmail(), role.name(), "USER_REGISTERED",
-                request.getEmail(), "Self-service registration", true, ipAddress);
+                request.getEmail(), "Self-service patient registration", true, ipAddress);
 
-        log.info("New user registered: {} ({})", request.getEmail(), role);
+        log.info("New patient registered: {} ({})", request.getEmail(), role);
+    }
+
+    // ── Set New Password (for temp password users) ───────────────────────
+
+    @Transactional
+    public AuthResponse setPassword(SetPasswordRequest request, String ipAddress) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new EhrException("User not found", 404));
+
+        if (!passwordEncoder.matches(request.getTempPassword(), user.getPassword())) {
+            throw new EhrException("Temporary password does not match", 400);
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setTempPassword(false);
+        userRepository.save(user);
+
+        auditService.log(user.getEmail(), user.getRole().name(), "PASSWORD_CHANGED",
+                null, "Temporary password updated to permanent password", true, ipAddress);
+
+        String accessToken  = jwtService.generateAccessToken(user.getEmail(), user.getRole());
+        String refreshToken = jwtService.generateRefreshToken(user.getEmail());
+
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .role(user.getRole().name())
+                .email(user.getEmail())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .userId(user.getId())
+                .isTempPassword(false)
+                .healthId(user.getHealthId())
+                .build();
+    }
+
+
+    // ── Health ID generation ──────────────────────────────────────────────
+
+    /**
+     * Generates a unique health ID in the format {@code EHR-YYYY-NNNNN}.
+     * Uses SecureRandom for the numeric part and retries up to 20 times
+     * to guarantee uniqueness before giving up.
+     */
+    public String generateUniqueHealthId() {
+        int year = Year.now().getValue();
+        for (int attempt = 0; attempt < 20; attempt++) {
+            int num = SECURE_RANDOM.nextInt(100_000); // 0-99999
+            String candidate = String.format("EHR-%d-%05d", year, num);
+            if (!userRepository.existsByHealthId(candidate)) {
+                return candidate;
+            }
+        }
+        throw new EhrException("Could not generate a unique Health ID. Please try again.", 500);
     }
 }

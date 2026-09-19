@@ -6,6 +6,7 @@ import com.ehr.dto.LoginResponse;
 import com.ehr.dto.OtpVerifyRequest;
 import com.ehr.dto.RefreshTokenRequest;
 import com.ehr.dto.RegisterRequest;
+import com.ehr.dto.SetPasswordRequest;
 import com.ehr.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -39,6 +40,18 @@ public class AuthController {
                 httpResponse);
         return ResponseEntity.ok(result);
     }
+
+    /**
+     * Set permanent password for accounts created with temporary password.
+     */
+    @PostMapping("/set-password")
+    public ResponseEntity<AuthResponse> setPassword(
+            @Valid @RequestBody SetPasswordRequest request,
+            HttpServletRequest httpRequest) {
+        AuthResponse response = authService.setPassword(request, httpRequest.getRemoteAddr());
+        return ResponseEntity.ok(response);
+    }
+
 
     /**
      * Step 2: Verify OTP → issue JWT access + refresh tokens.
