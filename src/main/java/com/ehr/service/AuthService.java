@@ -47,7 +47,7 @@ public class AuthService {
     @Value("${app.rate-limit.lock-duration-minutes}")
     private int lockDurationMinutes;
 
-    @Value("${app.admin.allowed-emails:admin@secureehr.com}")
+    @Value("${app.admin.allowed-emails:admin@ehr.com}")
     private String allowedAdminEmailsStr;
 
 
