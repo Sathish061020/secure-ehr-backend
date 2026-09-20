@@ -46,7 +46,8 @@ public class SecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // Public: auth endpoints only
+
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()// Public: auth endpoints only
                 .requestMatchers("/api/auth/**").permitAll()
                 
                 // Everything else requires a valid JWT
