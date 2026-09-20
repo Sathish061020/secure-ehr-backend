@@ -28,9 +28,16 @@ public class AdminInitializer implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) throws Exception {
+
         long adminCount = userRepository.countByRole(Role.ADMIN);
+
         if (adminCount == 0) {
-            log.info("No ADMIN user found. Bootstrapping initial admin account for email: {}", adminEmail);
+
+            log.info(
+                "No ADMIN user found. Bootstrapping initial admin account for email: {}",
+                adminEmail
+            );
+
             User admin = User.builder()
                     .email(adminEmail)
                     .password(passwordEncoder.encode(adminInitialPassword))
@@ -45,9 +52,24 @@ public class AdminInitializer implements CommandLineRunner {
                     .build();
 
             userRepository.save(admin);
+
             log.info("Initial ADMIN user created successfully.");
+
         } else {
-            log.info("ADMIN user already exists (count={}). Skipping bootstrap initialization.", adminCount);
+
+            User admin = userRepository.findByEmail("admin@ehr.com")
+                    .orElseThrow(() ->
+                            new RuntimeException("Admin account not found"));
+
+            admin.setPassword(passwordEncoder.encode(adminInitialPassword));
+            admin.setEnabled(true);
+            admin.setAccountLocked(false);
+            admin.setFailedLoginAttempts(0);
+            admin.setActive(true);
+
+            userRepository.save(admin);
+
+            log.info("Admin password reset successfully for admin@ehr.com");
         }
     }
 }
