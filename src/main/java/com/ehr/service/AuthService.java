@@ -70,6 +70,7 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail()).orElse(null);
 
         if (user == null) {
+            log.warn("LOGIN FAILED: User not found for email: {}", request.getEmail());
             auditService.log("ANONYMOUS", "UNKNOWN", "LOGIN_ATTEMPT",
                     request.getEmail(), "Unknown email", false, ipAddress);
             throw new EhrException("Invalid credentials", 401);
@@ -77,6 +78,7 @@ public class AuthService {
 
         // ── Active check ──────────────────────────────────────────────────
         if (!user.isActive()) {
+            log.warn("LOGIN FAILED for {}: Account is deactivated", user.getEmail());
             auditService.log(user.getEmail(), user.getRole().name(), "LOGIN_BLOCKED",
                     null, "Account deactivated", false, ipAddress);
             throw new EhrException("Account is deactivated", 403);
@@ -89,6 +91,7 @@ public class AuthService {
                     .map(String::toLowerCase)
                     .collect(Collectors.toList());
             if (!allowed.contains(user.getEmail().trim().toLowerCase())) {
+                log.warn("LOGIN FAILED for {}: Admin email not in allowed list [{}]", user.getEmail(), allowedAdminEmailsStr);
                 auditService.log(user.getEmail(), "ADMIN", "LOGIN_REJECTED",
                         null, "Admin email not in allowed-emails whitelist", false, ipAddress);
                 throw new EhrException("Admin login rejected: email not authorized", 403);
@@ -102,6 +105,7 @@ public class AuthService {
                     : null;
 
             if (unlockTime != null && LocalDateTime.now().isBefore(unlockTime)) {
+                log.warn("LOGIN FAILED for {}: Account locked until {}", user.getEmail(), unlockTime);
                 auditService.log(user.getEmail(), user.getRole().name(), "LOGIN_BLOCKED",
                         null, "Account locked due to repeated failures", false, ipAddress);
                 throw new EhrException("Account temporarily locked. Try again later.", 423);
@@ -121,12 +125,14 @@ public class AuthService {
                 user.setAccountLocked(true);
                 user.setLockTime(LocalDateTime.now());
                 userRepository.save(user);
+                log.warn("LOGIN FAILED for {}: Account locked after {} failed attempts", user.getEmail(), attempts);
                 auditService.log(user.getEmail(), user.getRole().name(), "ACCOUNT_LOCKED",
                         null, "Locked after " + attempts + " failed attempts", false, ipAddress);
                 throw new EhrException("Account locked after too many failed attempts.", 423);
             }
 
             userRepository.save(user);
+            log.warn("LOGIN FAILED for {}: Password mismatch (attempt {}/{})", user.getEmail(), attempts, maxAttempts);
             auditService.log(user.getEmail(), user.getRole().name(), "LOGIN_ATTEMPT",
                     null, "Wrong password. Attempt " + attempts + "/" + maxAttempts, false, ipAddress);
             throw new EhrException("Invalid credentials", 401);

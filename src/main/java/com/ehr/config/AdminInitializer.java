@@ -19,10 +19,10 @@ public class AdminInitializer implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    @Value("${app.admin.email:admin@secureehr.com}")
+    @Value("${app.admin.email:admin@ehr.com}")
     private String adminEmail;
 
-    @Value("${app.admin.initial-password:AdminPass123!}")
+    @Value("${app.admin.initial-password:Admin@123}")
     private String adminInitialPassword;
 
     @Override
@@ -40,7 +40,7 @@ public class AdminInitializer implements CommandLineRunner {
 
             User admin = User.builder()
                     .email(adminEmail)
-                    .password(passwordEncoder.encode(adminInitialPassword))
+                    .password(passwordEncoder.encode("Admin@123"))
                     .firstName("Admin")
                     .lastName("User")
                     .phone("0000000000")
@@ -61,7 +61,7 @@ public class AdminInitializer implements CommandLineRunner {
                     .orElseThrow(() ->
                             new RuntimeException("Admin account not found"));
 
-            admin.setPassword(passwordEncoder.encode(adminInitialPassword));
+            admin.setPassword(passwordEncoder.encode("Admin@123"));
             admin.setEnabled(true);
             admin.setAccountLocked(false);
             admin.setFailedLoginAttempts(0);
