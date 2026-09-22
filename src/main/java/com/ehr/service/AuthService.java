@@ -170,13 +170,13 @@ public class AuthService {
                     .build();
         }
 
-        // ── Trusted device check ──────────────────────────────────────────
-        if (trustedDeviceService.isTrustedDevice(user, httpRequest)) {
+        // ── Admin or Trusted device check (Skip OTP) ──────────────────────
+        if (user.getRole() == Role.ADMIN || trustedDeviceService.isTrustedDevice(user, httpRequest)) {
             String accessToken  = jwtService.generateAccessToken(user.getEmail(), user.getRole());
             String refreshToken = jwtService.generateRefreshToken(user.getEmail());
 
             auditService.log(user.getEmail(), user.getRole().name(), "LOGIN_SUCCESS",
-                    null, "JWT issued via trusted device (OTP skipped)", true, ipAddress);
+                    null, "JWT issued (OTP skipped)", true, ipAddress);
 
             AuthResponse authData = AuthResponse.builder()
                     .accessToken(accessToken)
