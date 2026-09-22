@@ -5,6 +5,7 @@ import com.ehr.entity.User;
 import com.ehr.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,6 +29,12 @@ public class DataSeeder implements ApplicationRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${app.admin.email:admin@ehr.com}")
+    private String adminEmail;
+
+    @Value("${app.admin.initial-password:Admin@123}")
+    private String adminInitialPassword;
+
     @Override
     public void run(ApplicationArguments args) {
         seedAdmin();
@@ -36,13 +43,13 @@ public class DataSeeder implements ApplicationRunner {
 
     private void seedAdmin() {
 
-        User admin = userRepository.findByEmail("admin@ehr.com").orElse(null);
+        User admin = userRepository.findByEmail(adminEmail).orElse(null);
 
         if (admin == null) {
 
             admin = User.builder()
-                    .email("admin@ehr.com")
-                    .password(passwordEncoder.encode("Admin@123"))
+                    .email(adminEmail)
+                    .password(passwordEncoder.encode(adminInitialPassword))
                     .firstName("System")
                     .lastName("Admin")
                     .phone("0000000000")
@@ -54,8 +61,7 @@ public class DataSeeder implements ApplicationRunner {
 
             log.info("=================================================");
             log.info("DEFAULT ADMIN CREATED");
-            log.info("Email: admin@ehr.com");
-            log.info("Password: Admin@123");
+            log.info("Email: {}", adminEmail);
             log.info("=================================================");
 
         } else {
@@ -66,7 +72,7 @@ public class DataSeeder implements ApplicationRunner {
              * Reset the password using BCrypt so an old password
              * stored in the database cannot prevent login.
              */
-            admin.setPassword(passwordEncoder.encode("Admin@123"));
+            admin.setPassword(passwordEncoder.encode(adminInitialPassword));
 
             admin.setRole(Role.ADMIN);
             admin.setEnabled(true);
@@ -83,8 +89,7 @@ public class DataSeeder implements ApplicationRunner {
 
             log.info("=================================================");
             log.info("EXISTING ADMIN ACCOUNT RESET");
-            log.info("Email: admin@ehr.com");
-            log.info("Password: Admin@123");
+            log.info("Email: {}", adminEmail);
             log.info("Account enabled: true");
             log.info("Account active: true");
             log.info("Account locked: false");

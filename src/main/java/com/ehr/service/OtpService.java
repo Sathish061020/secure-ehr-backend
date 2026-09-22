@@ -1,5 +1,6 @@
 package com.ehr.service;
 
+import com.ehr.exception.EhrException;
 import com.ehr.entity.OtpToken;
 import com.ehr.repository.OtpTokenRepository;
 import lombok.RequiredArgsConstructor;
@@ -83,20 +84,25 @@ public class OtpService {
     }
 
     private void sendOtpEmail(String toEmail, String otp) {
-        SimpleMailMessage message = new SimpleMailMessage();
-        message.setFrom(fromEmail);
-        message.setTo(toEmail);
-        message.setSubject("Secure EHR — Your Verification Code");
-        message.setText(
-                "Hello,\n\n" +
-                "Your one-time verification code for Secure EHR is:\n\n" +
-                "    " + otp + "\n\n" +
-                "This code expires in " + otpExpiryMinutes + " minutes.\n" +
-                "Do NOT share this code with anyone, including EHR staff.\n\n" +
-                "If you did not attempt to log in, please contact your administrator immediately.\n\n" +
-                "— Secure EHR System"
-        );
-        mailSender.send(message);
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject("Secure EHR — Your Verification Code");
+            message.setText(
+                    "Hello,\n\n" +
+                    "Your one-time verification code for Secure EHR is:\n\n" +
+                    "    " + otp + "\n\n" +
+                    "This code expires in " + otpExpiryMinutes + " minutes.\n" +
+                    "Do NOT share this code with anyone, including EHR staff.\n\n" +
+                    "If you did not attempt to log in, please contact your administrator immediately.\n\n" +
+                    "— Secure EHR System"
+            );
+            mailSender.send(message);
+        } catch (Exception e) {
+            log.error("Failed to send OTP email to {}: {}", toEmail, e.getMessage());
+            throw new EhrException("Mail server connection failed. Unable to dispatch OTP verification code.", 500);
+        }
     }
 
     public void sendTempPasswordEmail(String toEmail, String tempPassword) {
