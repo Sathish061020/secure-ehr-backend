@@ -42,11 +42,15 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
-        log.error("Unhandled exception", ex);
-        return response("An unexpected server error occurred", 500);
-    }
+public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
+    log.error("Unhandled exception", ex);
 
+    return response(
+        ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName(),
+        500
+    );
+    }
+    
     private ResponseEntity<Map<String, Object>> response(String message, int status) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", status);
