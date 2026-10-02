@@ -40,7 +40,7 @@ public class AdminInitializer implements CommandLineRunner {
 
             User admin = User.builder()
                     .email(adminEmail)
-                    .password(passwordEncoder.encode("Admin@123"))
+                    .password(passwordEncoder.encode(adminInitialPassword))
                     .firstName("Admin")
                     .lastName("User")
                     .phone("0000000000")
@@ -57,19 +57,18 @@ public class AdminInitializer implements CommandLineRunner {
 
         } else {
 
-            User admin = userRepository.findByEmail("admin@ehr.com")
-                    .orElseThrow(() ->
-                            new RuntimeException("Admin account not found"));
+            User admin = userRepository.findByEmail(adminEmail)
+                    .orElse(null);
 
-            admin.setPassword(passwordEncoder.encode("Admin@123"));
-            admin.setEnabled(true);
-            admin.setAccountLocked(false);
-            admin.setFailedLoginAttempts(0);
-            admin.setActive(true);
-
-            userRepository.save(admin);
-
-            log.info("Admin password reset successfully for admin@ehr.com");
+            if (admin != null) {
+                admin.setPassword(passwordEncoder.encode(adminInitialPassword));
+                admin.setEnabled(true);
+                admin.setAccountLocked(false);
+                admin.setFailedLoginAttempts(0);
+                admin.setActive(true);
+                userRepository.save(admin);
+                log.info("Admin password reset successfully for {}", adminEmail);
+            }
         }
     }
 }
